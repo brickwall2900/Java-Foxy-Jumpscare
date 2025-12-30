@@ -7,7 +7,11 @@ i didn't sleep today since my mood was terrible so i made this
 
 happy new year!! here comes 2026!!
 
-**Java 25 is required to build and run this thing...**
+> [!NOTE]
+> Java 25 is required to build and run this thing...
+
+> [!WARNING]
+> oh yeah i should NOT be responsible for whatever happens when you use this app (application), that's up to the end user (they can use this app for whatever they want at their own risk 💔).
 
 ## How to build?
 1. `gradlew jar`

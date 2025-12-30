@@ -7,6 +7,8 @@ i didn't sleep today since my mood was terrible so i made this
 
 happy new year!! here comes 2026!!
 
+**Java 25 is required to build and run this thing...**
+
 ## How to build?
 1. `gradlew jar`
 

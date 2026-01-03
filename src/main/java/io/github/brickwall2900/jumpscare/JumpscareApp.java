@@ -22,96 +22,137 @@ import java.util.prefs.Preferences;
 public class JumpscareApp {
     private static final Preferences PREFERENCES = Preferences.userNodeForPackage(JumpscareApp.class);
 
-    public static int chance;
-    public static Duration interval;
-    public static Duration prepTime;
-    public static Duration delayTime;
+    public record AppConfig(int chance,
+                            Duration interval,
+                            Duration prepTime,
+                            Duration delayTime) {}
 
-    static {
-        try {
-            reloadPreferences();
-            System.out.printf("CHANCE: %d%n", chance);
-            System.out.printf("INTERVAL: %s%n", interval);
-            System.out.printf("PREP_TIME: %s%n", prepTime);
-            System.out.printf("DELAY_TIME: %s%n", delayTime);
-        } catch (BackingStoreException e) {
-            e.printStackTrace();
+    private static AppConfig reloadPreferences(AppConfig lastConfig) throws BackingStoreException {
+        AppConfig config;
 
-            System.out.println("Loaded default preferences; backing store not available.");
-            chance = 10000;
-            interval = Duration.ofSeconds(1);
-            prepTime = Duration.ofSeconds(5);
-            delayTime = Duration.ofSeconds(10);
-        }
-    }
-
-    private static int lastChance;
-    private static Duration lastInterval, lastPrepTime, lastDelayTime;
-
-    private static void reloadPreferences() throws BackingStoreException {
         PREFERENCES.sync();
-        loadPreferences();
-        reportPreferenceChange();
-        savePreferences();
+        config = loadPreferences();
+        reportPreferenceChange(lastConfig, config);
+        savePreferences(config);
+
+        return config;
     }
 
-    private static void savePreferences() {
-        PREFERENCES.putInt("Chance", chance);
-        PREFERENCES.putLong("IntervalSeconds", interval.toSeconds());
-        PREFERENCES.putLong("PrepareSeconds", prepTime.toSeconds());
-        PREFERENCES.putLong("DelaySeconds", delayTime.toSeconds());
+    private static void savePreferences(AppConfig config) {
+        PREFERENCES.putInt("Chance", config.chance);
+        PREFERENCES.putLong("IntervalSeconds", config.interval.toSeconds());
+        PREFERENCES.putLong("PrepareSeconds", config.prepTime.toSeconds());
+        PREFERENCES.putLong("DelaySeconds", config.delayTime.toSeconds());
     }
 
-    private static void reportPreferenceChange() {
-        if (lastChance != 0 && lastChance != chance) {
-            System.out.printf("Updating CHANCE: %d -> %d%n",  lastChance, chance);
+    private static void reportPreferenceChange(AppConfig lastConfig, AppConfig currentConfig) {
+        if (lastConfig != null && lastConfig.chance != currentConfig.chance) {
+            System.out.printf("Updating CHANCE: %d -> %d%n", lastConfig.chance, currentConfig.chance);
         }
 
-        if (lastInterval != null && !lastInterval.equals(interval)) {
-            System.out.printf("Updating INTERVAL: %s -> %s%n",  lastInterval, interval);
+        if (lastConfig != null && !lastConfig.interval.equals(currentConfig.interval)) {
+            System.out.printf("Updating INTERVAL: %s -> %s%n", lastConfig.interval, currentConfig.interval);
         }
 
-        if (lastPrepTime != null && !lastPrepTime.equals(prepTime)) {
-            System.out.printf("Updating PREP_TIME: %s -> %s%n",  lastPrepTime, prepTime);
+        if (lastConfig != null && !lastConfig.prepTime.equals(currentConfig.prepTime)) {
+            System.out.printf("Updating PREP_TIME: %s -> %s%n", lastConfig.prepTime, currentConfig.prepTime);
         }
 
-        if (lastDelayTime != null && !lastDelayTime.equals(delayTime)) {
-            System.out.printf("Updating DELAY_TIME: %s -> %s%n",  lastDelayTime, delayTime);
+        if (lastConfig != null && !lastConfig.delayTime.equals(currentConfig.delayTime)) {
+            System.out.printf("Updating DELAY_TIME: %s -> %s%n", lastConfig.delayTime, currentConfig.delayTime);
         }
-
-        lastChance = chance;
-        lastInterval = interval;
-        lastPrepTime = prepTime;
-        lastDelayTime = delayTime;
     }
 
-    private static void loadPreferences() {
-        chance = Math.max(PREFERENCES.getInt("Chance", 10000), 1);
-        interval = Duration.ofSeconds(Math.max(PREFERENCES.getLong("IntervalSeconds", 1), 1));
-        prepTime = Duration.ofSeconds(Math.max(PREFERENCES.getLong("PrepareSeconds", 5), 0));
-        delayTime = Duration.ofSeconds(Math.max(PREFERENCES.getLong("DelaySeconds", 10), 0));
+    private static AppConfig loadPreferences() {
+        int chance = Math.max(PREFERENCES.getInt("Chance", 10000), 1);
+        Duration interval = Duration.ofSeconds(Math.max(PREFERENCES.getLong("IntervalSeconds", 1), 1));
+        Duration prepTime = Duration.ofSeconds(Math.max(PREFERENCES.getLong("PrepareSeconds", 5), 0));
+        Duration delayTime = Duration.ofSeconds(Math.max(PREFERENCES.getLong("DelaySeconds", 10), 0));
+
+        return new AppConfig(chance, interval, prepTime, delayTime);
     }
 
     static void main() {
         SecureRandom rand = new SecureRandom();
+        AppConfig config;
+
+        try {
+            config = reloadPreferences(null);
+            System.out.printf("CHANCE: %d%n", config.chance);
+            System.out.printf("INTERVAL: %s%n", config.interval);
+            System.out.printf("PREP_TIME: %s%n", config.prepTime);
+            System.out.printf("DELAY_TIME: %s%n", config.delayTime);
+        } catch (BackingStoreException e) {
+            e.printStackTrace();
+
+            System.out.println("Loaded default preferences; backing store not available.");
+            config = new AppConfig(10000, Duration.ofSeconds(1), Duration.ofSeconds(5), Duration.ofSeconds(10));
+        }
 
         try {
             while (true) {
-                if (rand.nextInt(chance) == 0) {
+                if (rand.nextInt(config.chance) == 0) {
                     try {
-                        doJumpscare();
+                        doJumpscare(config.prepTime, config.delayTime);
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
                 }
                 try {
-                    reloadPreferences();
+                    config = reloadPreferences(config);
                 } catch (BackingStoreException e) {
                     e.printStackTrace();
                 }
-                Thread.sleep(interval);
+                Thread.sleep(config.interval);
             }
         } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    static void doJumpscare(Duration prepTime, Duration delayTime) throws InterruptedException {
+        try (Clip clip = createClip()) {
+            GraphicsDevice[] devices = GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices();
+            List<JWindow> windows = new ArrayList<>();
+
+            int[] frameId = new int[]{0};
+            List<BufferedImage> images = new ArrayList<>();
+            Map<GraphicsDevice, BufferedImage> screenshots = new HashMap<>();
+
+            for (GraphicsDevice device : devices) {
+                JWindow frame = createWindow(device);
+                windows.add(frame);
+
+                CanvasPane canvas = new CanvasPane();
+                frame.getContentPane().add(canvas);
+
+                Consumer<Graphics2D> painter = createPainter(device, screenshots, canvas, frame, images, frameId);
+                canvas.setPainter(painter);
+            }
+
+            Properties properties = new Properties();
+            try (InputStream stream = JumpscareApp.class.getResourceAsStream("jumpscare.properties")) {
+                properties.load(stream);
+            }
+
+            final int frameCount = properties.getProperty("frameCount") == null
+                    ? 0 : Integer.parseInt(properties.getProperty("frameCount"));
+            final double frameDelaySeconds = properties.getProperty("frameDelay") == null
+                    ? 0.05 : Double.parseDouble(properties.getProperty("frameDelay"));
+            Duration frameDelay = Duration.ofNanos((long) (frameDelaySeconds * 1e9));
+
+            constructFrames(frameCount, images);
+
+            Thread.sleep(prepTime);
+            screenshots.putAll(screenshotMonitors(devices));
+
+            clip.start();
+
+            jumpscare(frameCount, windows, frameId, frameDelay);
+            destroy(windows, images);
+
+            Thread.sleep(delayTime);
+        } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
@@ -212,53 +253,6 @@ public class JumpscareApp {
             frameId[0] = i;
 
             Thread.sleep(frameDelay);
-        }
-    }
-
-    static void doJumpscare() throws InterruptedException {
-        try (Clip clip = createClip()) {
-            GraphicsDevice[] devices = GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices();
-            List<JWindow> windows = new ArrayList<>();
-
-            int[] frameId = new int[]{0};
-            List<BufferedImage> images = new ArrayList<>();
-            Map<GraphicsDevice, BufferedImage> screenshots = new HashMap<>();
-
-            for (GraphicsDevice device : devices) {
-                JWindow frame = createWindow(device);
-                windows.add(frame);
-
-                CanvasPane canvas = new CanvasPane();
-                frame.getContentPane().add(canvas);
-
-                Consumer<Graphics2D> painter = createPainter(device, screenshots, canvas, frame, images, frameId);
-                canvas.setPainter(painter);
-            }
-
-            Properties properties = new Properties();
-            try (InputStream stream = JumpscareApp.class.getResourceAsStream("jumpscare.properties")) {
-                properties.load(stream);
-            }
-
-            final int frameCount = properties.getProperty("frameCount") == null
-                    ? 0 : Integer.parseInt(properties.getProperty("frameCount"));
-            final double frameDelaySeconds = properties.getProperty("frameDelay") == null
-                    ? 0.05 : Double.parseDouble(properties.getProperty("frameDelay"));
-            Duration frameDelay = Duration.ofNanos((long) (frameDelaySeconds * 1e9));
-
-            constructFrames(frameCount, images);
-
-            Thread.sleep(prepTime);
-            screenshots.putAll(screenshotMonitors(devices));
-
-            clip.start();
-
-            jumpscare(frameCount, windows, frameId, frameDelay);
-            destroy(windows, images);
-
-            Thread.sleep(delayTime);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
         }
     }
 }

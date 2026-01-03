@@ -51,14 +51,20 @@ jumpscare1.frameType = png
 # This property is optional, it defaults to 1.
 jumpscare1.weight = 6.7
 
+# The path to the jumpscare sound. It MUST be a .wav file.
+jumpscare.sound = path/to/sound.wav
+
+
 # Here, I can define multiple jumpscares in the same file!
 freddy.frameDelay = 6.7
-freddy.frameFolder = path/to/folder
+freddy.frameFolder = path/to/freddy
 freddy.frameType = png
+freddy.sound = path/to/freddy.wav
 
 foxy.frameDelay = 6.9
 foxy.frameFolder = C:\\homework\\foxy
 foxy.frameType = png
+foxy.sound = C:\\homework\\foxy\\sound.wav
 ```
 
 The precedence for loading a jumpscare definition is as follows:

@@ -36,9 +36,19 @@ Jumpscare definitions are defined in a `jumpscare.properties` file. The `jumpsca
 ```properties
 # Jumpscare definitions are declared using a unique <identifier>.
 # Each property for a jumpscare is prefixed with that identifier.
-jumpscare1.frameDelay  = 0.05            # The delay in seconds between each frame.
-jumpscare1.frameFolder = path/to/frames  # The directory (folder) containing the jumpscare frames.
-jumpscare1.frameType   = png             # Image format of each jumpscare frame (e.g. png, jpg).
+
+# The delay in seconds between each frame.
+jumpscare1.frameDelay = 0.05
+
+# The directory (folder) containing the jumpscare frames.
+jumpscare1.frameFolder = path/to/frames
+
+# Image format of each jumpscare frame (e.g. png, jpg).
+jumpscare1.frameType = png
+
+# The higher the number, the higher the chance of this jumpscare appearing.
+# This property is optional, it defaults to 1.
+jumpscare1.weight = 6.7
 
 # Here, I can define multiple jumpscares in the same file!
 freddy.frameDelay = 6.7

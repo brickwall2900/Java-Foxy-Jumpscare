@@ -58,7 +58,7 @@ jumpscare1.frameType = png
 jumpscare1.weight = 6.7
 
 # The path to the jumpscare sound. It MUST be a .wav file.
-jumpscare.sound = path/to/sound.wav
+jumpscare1.sound = path/to/sound.wav
 
 
 # Here, I can define multiple jumpscares in the same file!

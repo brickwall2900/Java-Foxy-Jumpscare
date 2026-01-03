@@ -7,8 +7,12 @@ import java.awt.*;
 import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
 import java.io.BufferedInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.*;
@@ -16,6 +20,7 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.prefs.BackingStoreException;
 import java.util.prefs.Preferences;
+import java.util.stream.Stream;
 
 // Inspiration
 // https://steamcommunity.com/sharedfiles/filedetails/?id=3481943642
@@ -25,7 +30,8 @@ public class JumpscareApp {
     public record AppConfig(int chance,
                             Duration interval,
                             Duration prepTime,
-                            Duration delayTime) {}
+                            Duration delayTime,
+                            String defaultDefinition) {}
 
     private static AppConfig reloadPreferences(AppConfig lastConfig) throws BackingStoreException {
         AppConfig config;
@@ -43,6 +49,7 @@ public class JumpscareApp {
         PREFERENCES.putLong("IntervalSeconds", config.interval.toSeconds());
         PREFERENCES.putLong("PrepareSeconds", config.prepTime.toSeconds());
         PREFERENCES.putLong("DelaySeconds", config.delayTime.toSeconds());
+        PREFERENCES.put("DefaultDefinition", config.defaultDefinition);
     }
 
     private static void reportPreferenceChange(AppConfig lastConfig, AppConfig currentConfig) {
@@ -61,6 +68,10 @@ public class JumpscareApp {
         if (lastConfig != null && !lastConfig.delayTime.equals(currentConfig.delayTime)) {
             System.out.printf("Updating DELAY_TIME: %s -> %s%n", lastConfig.delayTime, currentConfig.delayTime);
         }
+
+        if (lastConfig != null && !lastConfig.defaultDefinition.equals(currentConfig.defaultDefinition)) {
+            System.out.printf("Updating DEFAULT_DEFINITION: %s -> %s%n", lastConfig.defaultDefinition, currentConfig.defaultDefinition);
+        }
     }
 
     private static AppConfig loadPreferences() {
@@ -68,11 +79,17 @@ public class JumpscareApp {
         Duration interval = Duration.ofSeconds(Math.max(PREFERENCES.getLong("IntervalSeconds", 1), 1));
         Duration prepTime = Duration.ofSeconds(Math.max(PREFERENCES.getLong("PrepareSeconds", 5), 0));
         Duration delayTime = Duration.ofSeconds(Math.max(PREFERENCES.getLong("DelaySeconds", 10), 0));
+        String defaultDefinition = PREFERENCES.get("DefaultDefinition", "");
 
-        return new AppConfig(chance, interval, prepTime, delayTime);
+        return new AppConfig(chance, interval, prepTime, delayTime, defaultDefinition);
     }
 
-    static void main() {
+    static void main(String[] args) {
+        String providedPropertyFile = null;
+        if (args.length > 0) {
+            providedPropertyFile = args[0];
+        }
+
         SecureRandom rand = new SecureRandom();
         AppConfig config;
 
@@ -82,18 +99,19 @@ public class JumpscareApp {
             System.out.printf("INTERVAL: %s%n", config.interval);
             System.out.printf("PREP_TIME: %s%n", config.prepTime);
             System.out.printf("DELAY_TIME: %s%n", config.delayTime);
+            System.out.printf("DEFAULT_DEFINITION: %s%n", config.defaultDefinition);
         } catch (BackingStoreException e) {
             e.printStackTrace();
 
             System.out.println("Loaded default preferences; backing store not available.");
-            config = new AppConfig(10000, Duration.ofSeconds(1), Duration.ofSeconds(5), Duration.ofSeconds(10));
+            config = new AppConfig(10000, Duration.ofSeconds(1), Duration.ofSeconds(5), Duration.ofSeconds(10), "");
         }
 
         try {
             while (true) {
                 if (rand.nextInt(config.chance) == 0) {
                     try {
-                        doJumpscare(config.prepTime, config.delayTime);
+                        doJumpscare(config, rand, providedPropertyFile);
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
@@ -110,56 +128,218 @@ public class JumpscareApp {
         }
     }
 
-    static void doJumpscare(Duration prepTime, Duration delayTime) throws InterruptedException {
-        try (Clip clip = createClip()) {
-            GraphicsDevice[] devices = GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices();
-            List<JWindow> windows = new ArrayList<>();
+    static void doJumpscare(AppConfig config, Random random, String providedPropertyFile) throws Exception {
+        GraphicsDevice[] devices = GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices();
+        List<JWindow> windows = new ArrayList<>();
 
-            int[] frameId = new int[]{0};
-            List<BufferedImage> images = new ArrayList<>();
-            Map<GraphicsDevice, BufferedImage> screenshots = new HashMap<>();
+        int[] frameId = new int[]{0};
+        List<BufferedImage> images = new ArrayList<>();
+        Map<GraphicsDevice, BufferedImage> screenshots = new HashMap<>();
 
-            for (GraphicsDevice device : devices) {
-                JWindow frame = createWindow(device);
-                windows.add(frame);
+        for (GraphicsDevice device : devices) {
+            JWindow frame = createWindow(device);
+            windows.add(frame);
 
-                CanvasPane canvas = new CanvasPane();
-                frame.getContentPane().add(canvas);
+            CanvasPane canvas = new CanvasPane();
+            frame.getContentPane().add(canvas);
 
-                Consumer<Graphics2D> painter = createPainter(device, screenshots, canvas, frame, images, frameId);
-                canvas.setPainter(painter);
+            Consumer<Graphics2D> painter = createPainter(device, screenshots, canvas, frame, images, frameId);
+            canvas.setPainter(painter);
+        }
+
+        Properties customJumpscare = getCustomJumpscareConfig(config, providedPropertyFile);
+        JumpscareDefinition definition = null;
+        if (customJumpscare != null) {
+            Map<String, JumpscareDefinition> definitions = parseJumpscareConfig(customJumpscare);
+            List<JumpscareDefinition> defList = new ArrayList<>(List.copyOf(definitions.values()));
+            Collections.shuffle(defList, random);
+            double weightSum = defList.stream()
+                    .mapToDouble(x -> x.weight)
+                    .filter(x -> x > 0)
+                    .sum();
+            double generatedWeight = random.nextDouble(weightSum);
+
+            if (weightSum <= 0) {
+                throw new IllegalStateException("All jumpscare weights are zero or invalid");
             }
 
+            for (JumpscareDefinition def : defList) {
+                generatedWeight -= def.weight;
+                if (generatedWeight <= 0.0) {
+                    definition = def;
+                    break;
+                }
+            }
+            if (definition == null) {
+                definition = defList.get(random.nextInt(defList.size()));
+            }
+        }
+
+        int frameCount;
+        Duration frameDelay;
+        Clip clip;
+
+        if (definition == null) {
             Properties properties = new Properties();
             try (InputStream stream = JumpscareApp.class.getResourceAsStream("jumpscare.properties")) {
                 properties.load(stream);
             }
-
-            final int frameCount = properties.getProperty("frameCount") == null
+            frameCount = properties.getProperty("frameCount") == null
                     ? 0 : Integer.parseInt(properties.getProperty("frameCount"));
-            final double frameDelaySeconds = properties.getProperty("frameDelay") == null
+            double frameDelaySeconds = properties.getProperty("frameDelay") == null
                     ? 0.05 : Double.parseDouble(properties.getProperty("frameDelay"));
-            Duration frameDelay = Duration.ofNanos((long) (frameDelaySeconds * 1e9));
+            frameDelay = Duration.ofNanos((long) (frameDelaySeconds * 1e9));
 
-            constructFrames(frameCount, images);
-
-            Thread.sleep(prepTime);
-            screenshots.putAll(screenshotMonitors(devices));
-
-            clip.start();
-
-            jumpscare(frameCount, windows, frameId, frameDelay);
-            destroy(windows, images);
-
-            Thread.sleep(delayTime);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+            constructDefaultFrames(frameCount, images);
+        } else {
+            JumpscareParseInfo parseInfo = constructFrames(definition, images);
+            frameCount = parseInfo.frameCount;
+            frameDelay = parseInfo.frameDelay;
         }
+        clip = createClip(definition);
+
+        Thread.sleep(config.prepTime);
+        screenshots.putAll(screenshotMonitors(devices));
+
+        clip.start();
+
+        jumpscare(frameCount, windows, frameId, frameDelay);
+        destroy(windows, images);
+
+        Thread.sleep(config.delayTime);
+        clip.stop();
+        clip.close();
     }
 
-    private static Clip createClip() {
+    private static final class JumpscareDefinition {
+        private Duration frameDelay;
+        private String framePath;
+        private String frameType;
+        private String sound;
+        private double weight;
+    }
+
+    private record JumpscareParseInfo(int frameCount, Duration frameDelay) {}
+
+    private static JumpscareParseInfo constructFrames(JumpscareDefinition definition, List<BufferedImage> images) throws IOException {
+        // read files
+        Path framePath = Path.of(definition.framePath);
+        if (!Files.exists(framePath)) {
+            throw new FileNotFoundException("Frame path not found: " + framePath);
+        }
+
+        List<Path> fileList;
+        try (Stream<Path> stream = Files.list(framePath)) {
+            fileList = new ArrayList<>(stream.toList());
+        }
+        Collections.sort(fileList);
+
+        int frameCount = 0;
+
+        for (Path path : fileList) {
+            if (path.getFileName().toString().toLowerCase().endsWith("." + definition.frameType)) {
+                frameCount++;
+                try (InputStream stream = Files.newInputStream(path)) {
+                    images.add(ImageIO.read(Objects.requireNonNull(stream)));
+                }
+            }
+        }
+
+        return new JumpscareParseInfo(frameCount, definition.frameDelay);
+    }
+
+    private static Map<String, JumpscareDefinition> parseJumpscareConfig(Properties properties) {
+        Map<String, JumpscareDefinition> definitions = new HashMap<>();
+        for (String key : properties.stringPropertyNames()) {
+            int period = key.indexOf('.');
+            String name = key.substring(0, period);
+            JumpscareDefinition def = definitions.computeIfAbsent(name, x -> new JumpscareDefinition());
+
+            String property = key.substring(period + 1);
+            String value = properties.getProperty(key);
+            switch (property) {
+                case "frameDelay" -> def.frameDelay = Duration.ofNanos((long) (Double.parseDouble(value) * 1e9));
+                case "framePath" -> def.framePath = value;
+                case "frameType" -> def.frameType = value;
+                case "sound" -> def.sound = value;
+                case "weight" -> def.weight = Double.parseDouble(value);
+                case null, default -> throw new IllegalArgumentException("Unknown property: " + property);
+            }
+        }
+
+        for (Map.Entry<String, JumpscareDefinition> entry : definitions.entrySet()) {
+            String name = entry.getKey();
+            JumpscareDefinition def = entry.getValue();
+            List<String> notDefined = new ArrayList<>();
+            if (def.frameDelay == null) notDefined.add("frameDelay");
+            if (def.framePath == null) notDefined.add("framePath");
+            if (def.frameType == null) notDefined.add("frameType");
+            if (def.sound == null) notDefined.add("sound");
+            if (!notDefined.isEmpty()) {
+                throw new NullPointerException("Error in %1$s while parsing jumpscare.properties: " +
+                        "properties %2$s not defined.".formatted(name, notDefined));
+            }
+        }
+
+        return definitions;
+    }
+
+    private static Properties getCustomJumpscareConfig(AppConfig config, String providedFile) throws IOException {
+        // 1. command line argument
+        if (providedFile != null) {
+            Properties properties = new Properties();
+            Path path = Path.of(providedFile);
+            if (Files.exists(path)) {
+                try (InputStream stream = Files.newInputStream(path, StandardOpenOption.READ)) {
+                    properties.load(stream);
+                }
+            }
+            return properties;
+        }
+
+        // 2. system properties
+        if (System.getProperty("jumpscare.definitions") != null) {
+            Path path = Path.of(System.getProperty("jumpscare.definitions"));
+            if (Files.exists(path)) {
+                Properties properties = new Properties();
+                try (InputStream stream = Files.newInputStream(path, StandardOpenOption.READ)) {
+                    properties.load(stream);
+                }
+                return properties;
+            }
+        }
+
+        // 3. jumpscare.properties
+        Path path = Path.of("jumpscare.properties");
+        if (Files.exists(path)) {
+            Properties properties = new Properties();
+            try (InputStream stream = Files.newInputStream(path, StandardOpenOption.READ)) {
+                properties.load(stream);
+            }
+            return properties;
+        }
+
+        // 4. config
+        if (config.defaultDefinition != null && !config.defaultDefinition.isEmpty()) {
+            path = Path.of(config.defaultDefinition);
+            if (Files.exists(path)) {
+                Properties properties = new Properties();
+                try (InputStream stream = Files.newInputStream(path, StandardOpenOption.READ)) {
+                    properties.load(stream);
+                }
+                return properties;
+            }
+        }
+
+        // use default
+        return null;
+    }
+
+    private static Clip createClip(JumpscareDefinition definition) {
         try (InputStream stream = new BufferedInputStream(
-                Objects.requireNonNull(JumpscareApp.class.getResourceAsStream("scream.wav")));
+                definition != null
+                        ? Files.newInputStream(Path.of(definition.sound))
+                        : Objects.requireNonNull(JumpscareApp.class.getResourceAsStream("scream.wav")));
              AudioInputStream audioStream = AudioSystem.getAudioInputStream(stream)) {
             Clip clip = AudioSystem.getClip();
             clip.open(audioStream);
@@ -217,7 +397,7 @@ public class JumpscareApp {
         };
     }
 
-    private static void constructFrames(int frameCount, List<BufferedImage> images) throws IOException {
+    private static void constructDefaultFrames(int frameCount, List<BufferedImage> images) throws IOException {
         for (int i = 0; i < frameCount; i++) {
             try (InputStream stream = JumpscareApp.class.getResourceAsStream("frames/frame_" + i + ".png")) {
                 images.add(ImageIO.read(Objects.requireNonNull(stream)));

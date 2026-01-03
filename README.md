@@ -11,7 +11,7 @@ happy new year!! here comes 2026!!
 1. `gradlew jar`
 
 ## Preferences
-Preferences should be stored wherever 
+Preferences are stored wherever 
 [`Preferences`](https://www.google.com/search?q=java+preferences+location) stores them 🤷‍♂️
 
 on Windows it could be somewhere on
@@ -20,8 +20,8 @@ on Windows it could be somewhere on
 on Linux it might be somewhere on
 `~/.java/.userPrefs`
 
-on Mac i have no idea
-*<small>maybe it could be stored here? `~/Library/Preferences/com.apple.java.util.prefs.plist`</small>*
+on Mac i have no idea...
+*maybe it could be stored here? `~/Library/Preferences/com.apple.java.util.prefs.plist`*
 
 right now, the keys and their default values are:
 * `Chance` = `10000`; the chance the jumpscare appears every interval
@@ -64,11 +64,14 @@ freddy.sound = path/to/freddy.wav
 foxy.frameDelay = 6.9
 foxy.frameFolder = C:\\homework\\foxy
 foxy.frameType = png
+# Make sure to use double backslashes when referencing Windows paths.
 foxy.sound = C:\\homework\\foxy\\sound.wav
+foxy.weight = 2
 ```
 
 The precedence for loading a jumpscare definition is as follows:
 1. Provided as a command line argument: `java -jar Jumpscare-x.x.x.jar jumpscare.properties`.
-2. A `jumpscare.properties` file exists in the current directory the JAR file runs on.
-3. The key `DefaultDefinition` exists in the [preferences](#preferences) with a valid value.
-4. Foxy Jumpscare (the default)
+2. Provided as a system property: `java -Djumpscare.definitions=jumpscare.properties -jar Jumpscare-x.x.x.jar`.
+3. A `jumpscare.properties` file exists in the current directory the JAR file runs on.
+4. The key `DefaultDefinition` exists in the [preferences](#preferences) with a valid value.
+5. Foxy Jumpscare (the default)

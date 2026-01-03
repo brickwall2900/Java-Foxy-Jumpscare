@@ -12,7 +12,7 @@ happy new year!! here comes 2026!!
 
 ## Preferences
 Preferences should be stored wherever 
-<a href="https://www.google.com/search?q=java+preferences+location">`Preferences`</a> stores them 🤷‍♂️
+[`Preferences`](https://www.google.com/search?q=java+preferences+location) stores them 🤷‍♂️
 
 on Windows it could be somewhere on
 `Computer\HKEY_CURRENT_USER\Software\JavaSoft\Prefs\io\github\brickwall2900\jumpscare`
@@ -30,7 +30,28 @@ right now, the keys and their default values are:
 * `DelaySeconds` = `10`; time in seconds to delay after the jumpscare appears
 
 ### How do I have a different jumpscare?
-See TODO below.
+Adding a jumpscare is easy... i think.
 
-## Not Implemented
-- [ ] changeable jumpscares
+Jumpscare definitions are defined in a `jumpscare.properties` file. The `jumpscare.properties` file looks like this:
+```properties
+# Jumpscare definitions are declared using a unique <identifier>.
+# Each property for a jumpscare is prefixed with that identifier.
+jumpscare1.frameDelay  = 0.05            # The delay in seconds between each frame.
+jumpscare1.frameFolder = path/to/frames  # The directory (folder) containing the jumpscare frames.
+jumpscare1.frameType   = png             # Image format of each jumpscare frame (e.g. png, jpg).
+
+# Here, I can define multiple jumpscares in the same file!
+freddy.frameDelay = 6.7
+freddy.frameFolder = path/to/folder
+freddy.frameType = png
+
+foxy.frameDelay = 6.9
+foxy.frameFolder = C:\\homework\\foxy
+foxy.frameType = png
+```
+
+The precedence for loading a jumpscare definition is as follows:
+1. Provided as a command line argument: `java -jar Jumpscare-x.x.x.jar jumpscare.properties`.
+2. A `jumpscare.properties` file exists in the current directory the JAR file runs on.
+3. The key `DefaultDefinition` exists in the [preferences](#preferences) with a valid value.
+4. Foxy Jumpscare (the default)

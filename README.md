@@ -41,6 +41,7 @@ Jumpscare definitions are defined in a `jumpscare.properties` file. The `jumpsca
 jumpscare1.frameDelay = 0.05
 
 # The directory (folder) containing the jumpscare frames.
+# The frame order will be determined by file name.
 jumpscare1.frameFolder = path/to/frames
 
 # Image format of each jumpscare frame (e.g. png, jpg).
